@@ -1,6 +1,13 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { apiGet } from "../services/api";
+import { db } from "../services/firebase";
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
 const emptyProfile = {
   name: "",
@@ -24,19 +31,46 @@ export const useAboutStore = defineStore("about", () => {
   const loading = ref(false);
   const error = ref(null);
 
+  const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
+
+  // Firestore references
+  const churchProfileDoc = doc(db, 'about', 'churchProfile');
+  const pastoralTeamCol = collection(db, 'pastoralTeam');
+  const churchActivitiesCol = collection(db, 'churchActivities');
+
   async function fetchAbout() {
     loading.value = true;
     error.value = null;
 
-    try {
-      const data = await apiGet("/api/about");
-      churchProfile.value = data.churchProfile ?? { ...emptyProfile };
-      pastoralTeam.value = data.pastoralTeam ?? [];
-      churchActivities.value = data.churchActivities ?? [];
-    } catch (err) {
-      error.value = err.message || "Gagal memuat halaman tentang gereja";
-    } finally {
-      loading.value = false;
+    if (isDev) {
+      try {
+        const data = await apiGet("/api/about");
+        churchProfile.value = data.churchProfile ?? { ...emptyProfile };
+        pastoralTeam.value = data.pastoralTeam ?? [];
+        churchActivities.value = data.churchActivities ?? [];
+      } catch (err) {
+        error.value = err.message || "Gagal memuat halaman tentang gereja";
+      } finally {
+        loading.value = false;
+      }
+    } else {
+      try {
+        // Fetch churchProfile
+        const profileSnap = await getDoc(churchProfileDoc);
+        churchProfile.value = profileSnap.exists() ? { ...profileSnap.data() } : { ...emptyProfile };
+
+        // Fetch pastoralTeam
+        const teamSnapshot = await getDocs(pastoralTeamCol);
+        pastoralTeam.value = teamSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Fetch churchActivities
+        const activitiesSnapshot = await getDocs(churchActivitiesCol);
+        churchActivities.value = activitiesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (err) {
+        error.value = err.message || "Gagal memuat halaman tentang gereja";
+      } finally {
+        loading.value = false;
+      }
     }
   }
 

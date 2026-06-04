@@ -7,6 +7,9 @@ import {
   refreshSession,
   register as apiRegister,
 } from "../services/auth";
+import { db, auth } from "../services/firebase";
+import { doc, setDoc } from "firebase/firestore";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 
 const ACCESS_TOKEN_KEY = "gki_access_token";
 const USER_KEY = "gki_user";
@@ -59,6 +62,7 @@ export const useAuthStore = defineStore("auth", {
       this.user = data.user;
       this.accessToken = data.tokens.accessToken;
       this.persist();
+      this.syncUserProfile();
     },
 
     clearSession() {
@@ -70,38 +74,87 @@ export const useAuthStore = defineStore("auth", {
     async bootstrap() {
       this.init();
 
+      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
+
       if (!this.accessToken) {
         this.initialized = true;
         return;
       }
 
-      try {
-        const data = await fetchCurrentUser();
-        this.user = data.user;
-        this.persist();
-      } catch {
+      if (isDev) {
         try {
-          const data = await refreshSession();
-          this.applyAuthPayload(data);
+          const data = await fetchCurrentUser();
+          this.user = data.user;
+          this.persist();
+          this.syncUserProfile();
         } catch {
-          this.clearSession();
+          try {
+            const data = await refreshSession();
+            this.applyAuthPayload(data);
+          } catch {
+            this.clearSession();
+          }
+        } finally {
+          this.initialized = true;
         }
-      } finally {
-        this.initialized = true;
+      } else {
+        // Production: using Firebase Auth
+        try {
+          const firebaseUser = auth.currentUser;
+          if (!firebaseUser) {
+            throw new Error('User not signed in');
+          }
+          // Refresh the token to get a fresh one
+          const idToken = await firebaseUser.getIdToken(true);
+          this.accessToken = idToken;
+          this.user = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email,
+          };
+          this.persist();
+          this.syncUserProfile();
+        } catch (error) {
+          console.error('Firebase auth error in bootstrap:', error);
+          this.clearSession();
+        } finally {
+          this.initialized = true;
+        }
       }
     },
 
     async register(form) {
       this.loading = true;
+      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
+
       try {
-        const data = await apiRegister({
-          name: form.name,
-          email: form.email,
-          password: form.password,
-          passwordConfirmation: form.passwordConfirmation,
-        });
-        this.applyAuthPayload(data);
-        return data;
+        if (isDev) {
+          const data = await apiRegister({
+            name: form.name,
+            email: form.email,
+            password: form.password,
+            passwordConfirmation: form.passwordConfirmation,
+          });
+          this.applyAuthPayload(data);
+          return data;
+        } else {
+          const userCredential = await createUserWithEmailAndPassword(
+            auth,
+            form.email,
+            form.password
+          );
+          const firebaseUser = userCredential.user;
+          const idToken = await firebaseUser.getIdToken();
+          this.accessToken = idToken;
+          this.user = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email,
+          };
+          this.persist();
+          this.syncUserProfile();
+          return { user: this.user, tokens: { accessToken: this.accessToken } };
+        }
       } finally {
         this.loading = false;
       }
@@ -109,32 +162,101 @@ export const useAuthStore = defineStore("auth", {
 
     async login(form) {
       this.loading = true;
+      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
+
       try {
-        const data = await apiLogin({
-          email: form.email,
-          password: form.password,
-        });
-        this.applyAuthPayload(data);
-        return data;
+        if (isDev) {
+          const data = await apiLogin({
+            email: form.email,
+            password: form.password,
+          });
+          this.applyAuthPayload(data);
+          return data;
+        } else {
+          const userCredential = await signInWithEmailAndPassword(
+            auth,
+            form.email,
+            form.password
+          );
+          const firebaseUser = userCredential.user;
+          const idToken = await firebaseUser.getIdToken();
+          this.accessToken = idToken;
+          this.user = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email,
+          };
+          this.persist();
+          this.syncUserProfile();
+          return { user: this.user, tokens: { accessToken: this.accessToken } };
+        }
       } finally {
         this.loading = false;
       }
     },
 
     async logout() {
+      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
+
       try {
-        await apiLogout();
+        if (isDev) {
+          await apiLogout();
+        } else {
+          await signOut(auth);
+        }
       } catch {
-        // Clear local session even if API call fails.
+        // Clear local session even if the call fails.
       } finally {
         this.clearSession();
       }
     },
 
     async refresh() {
-      const data = await refreshSession();
-      this.applyAuthPayload(data);
-      return data;
+      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
+
+      if (isDev) {
+        const data = await refreshSession();
+        this.applyAuthPayload(data);
+        return data;
+      } else {
+        try {
+          const firebaseUser = auth.currentUser;
+          if (!firebaseUser) {
+            throw new Error('User not signed in');
+          }
+          const idToken = await firebaseUser.getIdToken(true);
+          this.accessToken = idToken;
+          this.user = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email,
+          };
+          this.persist();
+          this.syncUserProfile();
+          return { user: this.user, tokens: { accessToken: this.accessToken } };
+        } catch (error) {
+          this.clearSession();
+          throw error;
+        }
+      }
+    },
+
+    syncUserProfile() {
+      if (import.meta.env.VITE_DEVELOPMENT === 'false' && this.user) {
+        // Store the user profile in Firestore under users collection with user ID as document ID
+        // We assume the user object has an id property
+        if (this.user.id) {
+          const userRef = doc(db, 'users', this.user.id);
+          // We don't want to overwrite the entire document every time, but we can merge.
+          // We'll set the fields we want to sync.
+          setDoc(userRef, {
+            name: this.user.name,
+            email: this.user.email,
+            // Add other fields as needed
+            updatedAt: new Date(),
+          }, { merge: true });
+        }
+      }
     },
   },
 });
