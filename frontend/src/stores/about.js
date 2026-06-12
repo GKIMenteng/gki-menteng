@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { apiGet } from "../services/api";
+import { useBackendService } from "../services/env";
 import { db } from "../services/firebase";
 import {
   doc,
@@ -31,8 +32,6 @@ export const useAboutStore = defineStore("about", () => {
   const loading = ref(false);
   const error = ref(null);
 
-  const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
-
   // Firestore references
   const churchProfileDoc = doc(db, 'about', 'churchProfile');
   const pastoralTeamCol = collection(db, 'pastoralTeam');
@@ -42,7 +41,7 @@ export const useAboutStore = defineStore("about", () => {
     loading.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiGet("/api/about");
         churchProfile.value = data.churchProfile ?? { ...emptyProfile };

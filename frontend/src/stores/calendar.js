@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { apiGet, apiPost, apiPut, apiDelete } from "../services/api";
+import { useBackendService } from "../services/env";
 import { db } from "../services/firebase";
 import {
   collection,
@@ -57,8 +58,6 @@ export const useCalendarStore = defineStore("calendar", () => {
   const getEventsForDate = (date) => events.value.filter((event) => event.date === date);
 
   // Determine if we are in development
-  const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
-
   // Firestore references
   const eventsCol = collection(db, 'events');
 
@@ -67,7 +66,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     loading.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const year = currentYear.value;
         const month = currentMonth.value + 1;
@@ -99,7 +98,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     saving.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiPost("/api/calendar/events", eventData);
         const created = data.event;
@@ -155,7 +154,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     saving.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiPut(`/api/calendar/events/${id}`, eventData);
         const updated = data.event;
@@ -226,7 +225,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     saving.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         await apiDelete(`/api/calendar/events/${id}`);
         events.value = events.value.filter((e) => e.id !== id);

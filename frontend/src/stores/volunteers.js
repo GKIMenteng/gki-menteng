@@ -1,12 +1,14 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { apiGet, apiPost, apiPut, apiDelete } from "../services/api";
+import { useBackendService } from "../services/env";
 import { db } from "../services/firebase";
 import {
   collection,
   query,
   where,
   getDocs,
+  getDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -24,8 +26,6 @@ export const useVolunteersStore = defineStore("volunteers", () => {
   const getVolunteersByMinistry = (ministry) =>
     volunteers.value.filter((vol) => vol.ministry === ministry);
 
-  const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
-
   // Firestore references
   const volunteersCol = collection(db, 'volunteers');
   const ministriesCol = collection(db, 'ministries');
@@ -36,7 +36,7 @@ export const useVolunteersStore = defineStore("volunteers", () => {
     loading.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiGet("/api/volunteers");
         volunteers.value = data.volunteers ?? [];
@@ -76,7 +76,7 @@ export const useVolunteersStore = defineStore("volunteers", () => {
   }
 
   async function refreshMinistries() {
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiGet("/api/volunteers");
         ministries.value = data.ministries ?? [];
@@ -97,7 +97,7 @@ export const useVolunteersStore = defineStore("volunteers", () => {
     saving.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiPost("/api/volunteers", volunteerData);
         const created = data.volunteer;
@@ -136,7 +136,7 @@ export const useVolunteersStore = defineStore("volunteers", () => {
     saving.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiPut(`/api/volunteers/${id}`, volunteerData);
         const updated = data.volunteer;
@@ -181,7 +181,7 @@ export const useVolunteersStore = defineStore("volunteers", () => {
     saving.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         await apiDelete(`/api/volunteers/${id}`);
         volunteers.value = volunteers.value.filter((v) => v.id !== id);

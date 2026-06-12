@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { apiGet } from "../services/api";
+import { useBackendService } from "../services/env";
 import { db } from "../services/firebase";
 import {
   doc,
@@ -33,8 +34,6 @@ export const useDashboardStore = defineStore("dashboard", () => {
     return upcomingEvents.value.filter((event) => event.date === today);
   });
 
-  const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
-
   // Firestore references
   const newsCol = collection(db, 'news');
   const dailyReflectionDoc = doc(db, 'dailyReflection', 'today');
@@ -45,7 +44,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
     loading.value = true;
     error.value = null;
 
-    if (isDev) {
+    if (useBackendService) {
       try {
         const data = await apiGet("/api/dashboard");
         news.value = data.news ?? [];

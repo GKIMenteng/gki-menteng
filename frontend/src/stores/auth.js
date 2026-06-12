@@ -7,9 +7,10 @@ import {
   refreshSession,
   register as apiRegister,
 } from "../services/auth";
+import { useBackendService } from "../services/env";
 import { db, auth } from "../services/firebase";
 import { doc, setDoc } from "firebase/firestore";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 
 const ACCESS_TOKEN_KEY = "gki_access_token";
 const USER_KEY = "gki_user";
@@ -71,17 +72,24 @@ export const useAuthStore = defineStore("auth", {
       this.persist();
     },
 
+    waitForFirebaseAuthState() {
+      return new Promise((resolve) => {
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+          unsubscribe();
+          resolve(firebaseUser);
+        });
+      });
+    },
+
     async bootstrap() {
       this.init();
-
-      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
 
       if (!this.accessToken) {
         this.initialized = true;
         return;
       }
 
-      if (isDev) {
+      if (useBackendService) {
         try {
           const data = await fetchCurrentUser();
           this.user = data.user;
@@ -100,11 +108,11 @@ export const useAuthStore = defineStore("auth", {
       } else {
         // Production: using Firebase Auth
         try {
-          const firebaseUser = auth.currentUser;
+          const firebaseUser = await this.waitForFirebaseAuthState();
           if (!firebaseUser) {
-            throw new Error('User not signed in');
+            throw new Error("User not signed in");
           }
-          // Refresh the token to get a fresh one
+
           const idToken = await firebaseUser.getIdToken(true);
           this.accessToken = idToken;
           this.user = {
@@ -115,7 +123,7 @@ export const useAuthStore = defineStore("auth", {
           this.persist();
           this.syncUserProfile();
         } catch (error) {
-          console.error('Firebase auth error in bootstrap:', error);
+          console.error("Firebase auth error in bootstrap:", error);
           this.clearSession();
         } finally {
           this.initialized = true;
@@ -125,10 +133,9 @@ export const useAuthStore = defineStore("auth", {
 
     async register(form) {
       this.loading = true;
-      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
 
       try {
-        if (isDev) {
+        if (useBackendService) {
           const data = await apiRegister({
             name: form.name,
             email: form.email,
@@ -162,10 +169,9 @@ export const useAuthStore = defineStore("auth", {
 
     async login(form) {
       this.loading = true;
-      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
 
       try {
-        if (isDev) {
+        if (useBackendService) {
           const data = await apiLogin({
             email: form.email,
             password: form.password,
@@ -196,10 +202,8 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async logout() {
-      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
-
       try {
-        if (isDev) {
+        if (useBackendService) {
           await apiLogout();
         } else {
           await signOut(auth);
@@ -212,9 +216,7 @@ export const useAuthStore = defineStore("auth", {
     },
 
     async refresh() {
-      const isDev = import.meta.env.VITE_DEVELOPMENT === 'true';
-
-      if (isDev) {
+      if (useBackendService) {
         const data = await refreshSession();
         this.applyAuthPayload(data);
         return data;
@@ -242,7 +244,7 @@ export const useAuthStore = defineStore("auth", {
     },
 
     syncUserProfile() {
-      if (import.meta.env.VITE_DEVELOPMENT === 'false' && this.user) {
+      if (!useBackendService && this.user) {
         // Store the user profile in Firestore under users collection with user ID as document ID
         // We assume the user object has an id property
         if (this.user.id) {

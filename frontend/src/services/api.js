@@ -1,19 +1,6 @@
-/**
- * API base URL:
- * - Empty string → relative `/api/...` (Vite dev proxy in vite.config.js)
- * - Full URL → direct calls (production or CORS-enabled backend)
- */
-function resolveBaseUrl() {
-  const fromEnv = import.meta.env.VITE_API_BASE_URL;
+import { resolveApiBaseUrl, useBackendService } from "./env";
 
-  if (fromEnv === undefined || fromEnv === null) {
-    return import.meta.env.VITE_API_BASE_URL ? "" : "http://localhost:8000";
-  }
-
-  return String(fromEnv).replace(/\/$/, "");
-}
-
-const baseUrl = resolveBaseUrl();
+const baseUrl = resolveApiBaseUrl();
 
 let accessTokenGetter = () => null;
 let refreshPromise = null;
@@ -86,6 +73,10 @@ async function apiRequest(method, path, body, { retryOnUnauthorized = true } = {
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
+  }
+
+  if (!useBackendService) {
+    throw new Error("API services are disabled when VITE_DEVELOPMENT=false. Use Firebase instead.");
   }
 
   let response;
